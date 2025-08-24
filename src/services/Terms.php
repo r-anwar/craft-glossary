@@ -81,7 +81,8 @@ class Terms extends Component
                     $text = s($text)->replaceMatches($pattern, function ($matches) use ($term, $template, &$replacements, &$index, $view, $glossary) {
                         try {
                             /**
-                             * WARNING: $view->renderString(...) internally triggers the instantiation of Twig\Node\Node,
+                             * @warning
+                             * $view->renderString(...) internally triggers the instantiation of Twig\Node\Node,
                              * which is deprecated since Twig 3.15 and will become abstract in Twig 4.0.
                              *
                              * This results in a runtime warning or exception in environments that enforce deprecation policies,
@@ -158,7 +159,8 @@ class Terms extends Component
 
                         try {
                             /**
-                             * WARNING: $view->renderTemplate(...) internally triggers the instantiation of Twig\Node\Node,
+                             * @warning
+                             * $view->renderTemplate(...) internally triggers the instantiation of Twig\Node\Node,
                              * which is deprecated since Twig 3.15 and will become abstract in Twig 4.0.
                              *
                              * This results in a runtime warning or exception in environments that enforce deprecation policies,
