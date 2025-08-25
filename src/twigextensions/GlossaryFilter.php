@@ -46,14 +46,14 @@ class GlossaryFilter extends AbstractExtension
         $glossary->registerAssets();
 
         /**
-        * @warning The original return statement was commented out because it only returned the processed text
-        * without injecting the rendered glossary term tooltips into the HTML output.
-        *
-        * To ensure that the generated tooltip elements (e.g., <div id="term-...">) are included in the final
-        * page markup, we now explicitly register them using `registerHtml()` at the end of the page.
-        *
-        * This change is required to support dynamic tooltips rendered outside the content flow.
-        **/
+         * @warning The original return statement was commented out because it only returned the processed text
+         * without injecting the rendered glossary term tooltips into the HTML output.
+         *
+         * To ensure that the generated tooltip elements (e.g., <div id="term-...">) are included in the final
+         * page markup, we now explicitly register them using `registerHtml()` at the end of the page.
+         *
+         * This change is required to support dynamic tooltips rendered outside the content flow.
+         **/
         //return $terms->renderTerms($value, $glossary);
 
         $result = $terms->renderTerms($value, $glossary);
@@ -61,5 +61,10 @@ class GlossaryFilter extends AbstractExtension
 
         return $result;
 
+    }
+
+    public function getRenderedTerms(): string
+    {
+        return $this->renderedTerms;
     }
 }

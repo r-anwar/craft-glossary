@@ -115,6 +115,48 @@ class Terms extends Component
 
                             $replacement = preg_replace_callback('/\{\{\s*(.*?)\s*\}\}/',
                                 function ($match) use ($variables, $term) {
+                                    $key = trim($match[1]);
+
+                                    // Einfacher Platzhalter: {{ text }}
+                                    if ($key === 'text') {
+                                        return htmlspecialchars($variables['text'] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                                    }
+
+                                    // Einfacher Platzhalter: {{ term }}
+                                    if ($key === 'term') {
+                                        return htmlspecialchars((string)$term, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                                    }
+
+                                    // Verschachtelte Platzhalter: {{ term.id }}, {{ term.bio }}, ...
+                                    $parts = explode('.', $key);
+                                    if ($parts[0] === 'term') {
+                                        $value = $term;
+                                        for ($i = 1; $i < count($parts); $i++) {
+                                            $part = $parts[$i];
+                                            if (is_array($value) && array_key_exists($part, $value)) {
+                                                $value = $value[$part];
+                                            } elseif (is_object($value) && isset($value->$part)) {
+                                                $value = $value->$part;
+                                            } else {
+                                                return $match[0]; // nicht ersetzbar → unverändert zurückgeben
+                                            }
+                                        }
+
+                                        return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                                    }
+
+                                    // Fallback: Unverändert zurückgeben
+                                    return $match[0];
+                                },
+                                $template);
+
+                            /*
+                            $variables = $term->getFieldValues();
+                            $variables['term'] = $term;
+                            $variables['text'] = $matches[0];
+
+                            $replacement = preg_replace_callback('/\{\{\s*(.*?)\s*\}\}/',
+                                function ($match) use ($variables, $term) {
                                     $key = $match[1];
 
                                     if ($key === 'text') {
@@ -137,7 +179,7 @@ class Terms extends Component
 
                                     // Fallback: Unverändert zurückgeben
                                     return $match[0];
-                                }, $template);
+                                }, $template);*/
                         } catch (SyntaxError $e) {
                             Craft::error($e->getMessage(), 'glossary');
                             $replacement = false;
@@ -213,13 +255,13 @@ class Terms extends Component
             $renderedTerms = '';
             foreach ($this->usedTerms as $id => $usedTerm) {
                 $renderedTerms .= Html::tag('div', $usedTerm, [
-                    'id' => 'term-' . $id,
+                    'class' => 'glossary-popover-container',
                 ]);
             }
 
             $this->renderedTerms = Html::tag('div', $renderedTerms, [
                 'id' => 'glossary-terms',
-                'style' => 'display: none;',
+                /*'style' => 'display: none;',*/
             ]);
 
         } catch (Exception $e) {
