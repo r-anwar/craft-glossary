@@ -1,0 +1,55 @@
+.glossary-popover-container > div[popover] {
+    position: fixed;
+    z-index: 9999;
+    background: #fff;
+    border: 1px solid #ccc;
+    padding: 8px 12px;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    width: max-content;
+    max-width: 90vw;
+    font-size: 0.875rem;
+    pointer-events: none;
+    margin: unset;
+}
+
+/* Glossarbegriff */
+.glossary {
+    text-decoration: underline dotted;
+    cursor: help;
+    position: relative;
+    display: inline-block;
+}
+
+/* Optional: Fokus-Outline für Accessibility */
+.glossary:focus {
+    outline: 2px solid #005fcc;
+    outline-offset: 2px;
+}
+
+/**
+ Wenn Popover nicht unterstützt wird.
+ */
+.no-popover-support[data-glossary-term-id]::after {
+    content: attr(data-glossary-term-easy-read);
+    position: absolute;
+    z-index: 9999;
+    bottom: 100%; /* Tooltip oberhalb anzeigen */
+    left: 50%;
+    transform: translateX(-50%) translateY(-0.5em); /* leicht nach oben verschieben */
+    background: #fff;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    opacity: 0;
+}
+
+.no-popover-support[data-glossary-term-id]:hover::after,
+.no-popover-support[data-glossary-term-id]:focus::after {
+    opacity: 1;
+}
