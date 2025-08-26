@@ -114,7 +114,7 @@ class Terms extends Component
                             $variables['text'] = $matches[0];
 
                             $replacement = preg_replace_callback('/\{\{\s*(.*?)\s*\}\}/',
-                                function ($match) use ($variables, $term) {
+                                function ($match) use ($variables, $term, &$index) {
                                     $key = trim($match[1]);
 
                                     // Einfacher Platzhalter: {{ text }}
@@ -125,6 +125,10 @@ class Terms extends Component
                                     // Einfacher Platzhalter: {{ term }}
                                     if ($key === 'term') {
                                         return htmlspecialchars((string)$term, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                                    }
+                                    // Einfacher Platzhalter: {{ term }}
+                                    if ($key === 'token') {
+                                        return $term->id.$index;
                                     }
 
                                     // Verschachtelte Platzhalter: {{ term.id }}, {{ term.bio }}, ...
@@ -188,16 +192,17 @@ class Terms extends Component
                         if ($replacement === false) {
                             return $term;
                         }
-
-                        $token = $term->uid . '-' . $index++;
-                        $replacements[$token] = $replacement;
-
+                                    
                         /**
                          * @deprecated Remove field values with version 2.0 and only use term to access all fields.
-                         */
+                        */
                         $variables = $term->getFieldValues();
                         $variables['term'] = $term;
                         $variables['text'] = $matches[0];
+                        $variables['token'] = $term->id.$index;
+                        
+                        $token = $term->uid . '-' . $index++;
+                        $replacements[$token] = $replacement;
 
                         try {
                             /**
@@ -238,7 +243,7 @@ class Terms extends Component
 
                             $rendered = $twig->render('tooltip', $variables);
 
-                            $this->usedTerms[$term->id] = $rendered;
+                            $this->usedTerms[$token] = $rendered;
                         } catch (SyntaxError $e) {
                             Craft::error($e->getMessage(), 'glossary');
                         }
