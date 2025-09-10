@@ -20,6 +20,8 @@ class Terms extends Component
 
     protected array $usedTerms = [];
 
+    private int $index = 0;
+
     /**
      * Returns all terms to search for.
      *
@@ -65,7 +67,7 @@ class Terms extends Component
                     'data-glossary-term' => 'term-' . $term->id,
                 ]);
 
-                $index = 0;
+                //$index = 0;
                 $words = $this->parseTerms($term);
 
                 foreach ($words as $word) {
@@ -78,7 +80,7 @@ class Terms extends Component
                     if (!$term->caseSensitive) {
                         $pattern .= 'i';
                     }
-                    $text = s($text)->replaceMatches($pattern, function ($matches) use ($term, $template, &$replacements, &$index, $view, $glossary) {
+                    $text = s($text)->replaceMatches($pattern, function ($matches) use ($term, $template, &$replacements, $view, $glossary) {
                         try {
                             /**
                              * @warning
@@ -114,7 +116,7 @@ class Terms extends Component
                             $variables['text'] = $matches[0];
 
                             $replacement = preg_replace_callback('/\{\{\s*(.*?)\s*\}\}/',
-                                function ($match) use ($variables, $term, &$index) {
+                                function ($match) use ($variables, $term) {
                                     $key = trim($match[1]);
 
                                     // Einfacher Platzhalter: {{ text }}
@@ -128,7 +130,7 @@ class Terms extends Component
                                     }
                                     // Einfacher Platzhalter: {{ term }}
                                     if ($key === 'token') {
-                                        return $term->id.$index;
+                                        return $term->id.$this->index;
                                     }
 
                                     // Verschachtelte Platzhalter: {{ term.id }}, {{ term.bio }}, ...
@@ -199,9 +201,9 @@ class Terms extends Component
                         $variables = $term->getFieldValues();
                         $variables['term'] = $term;
                         $variables['text'] = $matches[0];
-                        $variables['token'] = $term->id.$index;
+                        $variables['token'] = $term->id.$this->index;
                         
-                        $token = $term->uid . '-' . $index++;
+                        $token = $term->uid . '-' . $this->index++;
                         $replacements[$token] = $replacement;
 
                         try {
