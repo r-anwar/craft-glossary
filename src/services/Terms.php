@@ -20,6 +20,8 @@ class Terms extends Component
 
     protected array $usedTerms = [];
 
+    private $index = 0;
+
     /**
      * Returns all terms to search for.
      *
@@ -65,7 +67,7 @@ class Terms extends Component
                     'data-glossary-term' => 'term-' . $term->id,
                 ]);
 
-                $index = 0;
+                //$index = 0;
                 $words = $this->parseTerms($term);
 
                 foreach ($words as $word) {
@@ -78,7 +80,7 @@ class Terms extends Component
                     if (!$term->caseSensitive) {
                         $pattern .= 'i';
                     }
-                    $text = s($text)->replaceMatches($pattern, function ($matches) use ($term, $template, &$replacements, &$index, $view, $glossary) {
+                    $text = s($text)->replaceMatches($pattern, function ($matches) use ($term, $template, &$replacements, $view, $glossary) {
                         try {
                             /**
                              * @warning
@@ -189,7 +191,7 @@ class Terms extends Component
                             return $term;
                         }
 
-                        $token = $term->uid . '-' . $index++;
+                        $token = $term->uid . '-' . $this->index++;
                         $replacements[$token] = $replacement;
 
                         /**
