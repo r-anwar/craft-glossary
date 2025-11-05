@@ -60,9 +60,13 @@ class Terms extends Component
             $terms = Term::find()->glossary($glossary)->all();
 
             foreach ($terms as $term) {
+                // A unique id for each text block.
+                // uniqid adds a period to the generated string, which isn't valid in CSS
+                // That's why we replace it
+                $termUniqueID = str_replace('.', '', uniqid('', true) . '-' . $term->id);
                 $template = Html::modifyTagAttributes($termTemplate, [
                     'class' => 'glossary',
-                    'data-glossary-term' => 'term-' . $term->id,
+                    'data-glossary-term' => 'term-' . $termUniqueID,
                 ]);
 
                 $index = 0;
@@ -78,7 +82,7 @@ class Terms extends Component
                     if (!$term->caseSensitive) {
                         $pattern .= 'i';
                     }
-                    $text = s($text)->replaceMatches($pattern, function ($matches) use ($term, $template, &$replacements, &$index, $view, $glossary) {
+                    $text = s($text)->replaceMatches($pattern, function ($matches) use ($term, $template, &$replacements, &$index, $view, $glossary, $termUniqueID) {
                         try {
                             /**
                              * @warning
@@ -114,7 +118,7 @@ class Terms extends Component
                             $variables['text'] = $matches[0];
 
                             $replacement = preg_replace_callback('/\{\{\s*(.*?)\s*\}\}/',
-                                function ($match) use ($variables, $term, &$index) {
+                                function ($match) use ($variables, $term, &$index, &$termUniqueID) {
                                     $key = trim($match[1]);
 
                                     // Einfacher Platzhalter: {{ text }}
@@ -128,7 +132,7 @@ class Terms extends Component
                                     }
                                     // Einfacher Platzhalter: {{ term }}
                                     if ($key === 'token') {
-                                        return $term->id.$index;
+                                        return $termUniqueID.$index;
                                     }
 
                                     // Verschachtelte Platzhalter: {{ term.id }}, {{ term.bio }}, ...
@@ -199,8 +203,7 @@ class Terms extends Component
                         $variables = $term->getFieldValues();
                         $variables['term'] = $term;
                         $variables['text'] = $matches[0];
-                        $variables['token'] = $term->id.$index;
-                        
+                        $variables['token'] = $termUniqueID.$index;
                         $token = $term->uid . '-' . $index++;
                         $replacements[$token] = $replacement;
 
@@ -259,13 +262,11 @@ class Terms extends Component
 
             $renderedTerms = '';
             foreach ($this->usedTerms as $id => $usedTerm) {
-                $renderedTerms .= Html::tag('div', $usedTerm, [
-                    'class' => 'glossary-popover-container',
-                ]);
+                $renderedTerms .= $usedTerm;
             }
 
             $this->renderedTerms = Html::tag('div', $renderedTerms, [
-                'id' => 'glossary-terms',
+                'class' => 'glossary-terms',
                 /*'style' => 'display: none;',*/
             ]);
 
