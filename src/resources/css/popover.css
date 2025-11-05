@@ -1,4 +1,4 @@
-.glossary-popover-container div[popover] {
+.glossary-terms div[popover] {
     inset:unset;
     position: absolute;
     margin: 0;
@@ -6,7 +6,6 @@
     max-inline-size: 20rem;
     position-area: top right;
     position-try-fallbacks: top span-right, top span-left, bottom span-right, bottom span-left, --span-right, --span-left;
-    position-anchor: --term-123;
     box-shadow: 0 0px 30px 0px rgba(0,0,0,.08);
     border: 2px solid var(--wm-color-nebelgrau-light);
     padding: 0.9rem 0.9rem 0.6rem;
@@ -24,7 +23,7 @@
 }
 
 /* Glossarbegriff */
-.glossary {
+.glossary, .glossary:is(:hover, :focus-visible) {
     background: unset !important;
     padding: unset !important;
     color: unset !important;
