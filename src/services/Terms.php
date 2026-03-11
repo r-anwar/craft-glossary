@@ -13,6 +13,7 @@ use Twig\Error\SyntaxError;
 use Twig\Loader\ArrayLoader;
 use yii\base\Component;
 use function Symfony\Component\String\s;
+use craft\elements\Entry;
 
 class Terms extends Component
 {
@@ -207,6 +208,22 @@ class Terms extends Component
                         $token = $term->uid . '-' . $index++;
                         $replacements[$token] = $replacement;
 
+                        /**
+                         * @deprecated Remove field values with version 2.0 and only use term to access all fields.
+                         */
+                        $variables = $term->getFieldValues();
+                        $variables['term'] = $term;
+
+                        // Construct the search string
+                        $searchString = 'title:"' . $term . '"';
+
+                        // Perform the search
+                        $entry = Entry::find()
+                            ->section('glossary')
+                            ->search($searchString)
+                            ->one();
+
+                        $variables['caption'] = $entry->caption;
                         try {
                             /**
                              * @warning
