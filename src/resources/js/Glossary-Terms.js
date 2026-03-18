@@ -3,16 +3,15 @@
 const contentBlocks = document.querySelectorAll(".glossary-helper");
 
 // Fetch all terms from the API
-fetch(
-	`/elements/glossary.${window.wmGlossaryID}.json`,
-)
+fetch(`/elements/glossary.${window.wmGlossaryID}.json`)
 	.then((response) => {
 		if (!response.ok) throw new Error(`API error: ${response.statusText}`);
 		return response.json();
 	})
 	.then((data) => {
-		addPopovers(data);
-		replaceTerms(data);
+		const allTermsAndIds = getAllTerms(data);
+		replaceTerms(allTermsAndIds);
+		attachMouseEvents();
 	})
 	.catch((error) => {
 		console.warn("Fetch error:", error);
@@ -20,54 +19,111 @@ fetch(
 
 /**
  * Iterate over terms and create a popover for each term
- * 
+ *
  * @param {Object} data Data from the terms API
  */
-const addPopovers = (data) => {
-	for (let i = 0; i < Object.keys(data.items).length; i++) {
-		const item = data.items[i];
-		const popover = document.createElement("div");
-		popover.setAttribute("id", `term-${item.uid.substring(1, 16)}`);
-		popover.setAttribute("popover", "auto");
-		popover.setAttribute("class", "glossary-description");
-		popover.innerHTML = item.easyRead;
-		document.body.append(popover);
-	}
+const addPopovers = (termsAndIds, id) => {
+	const content = termsAndIds[2];
+	const popover = document.createElement("div");
+
+	popover.setAttribute("id", id);
+	popover.setAttribute("popover", "auto");
+	popover.setAttribute("class", "glossary-description");
+	popover.style.positionAnchor = `--${id}`;
+	popover.innerHTML = content;
+	document.body.append(popover);
+};
+
+/**
+ * Create an array of all terms, each with their UID
+ *
+ * @param {Object} data Data from the terms API
+ */
+const getAllTerms = (data) => {
+	return Object.values(data.items).flatMap(
+		({ term, synonyms, uid, easyRead }, idx) => [
+			[term, uid, easyRead],
+			...(synonyms
+				? synonyms.split(",").map((s, index) => [s.trim(), uid, easyRead])
+				: []),
+		],
+	);
+};
+
+/**
+ * Truncate and prefix the UUID
+ *
+ * @param {String} str UID
+ */
+const truncateId = (str) => {
+	return `${str.substring(0, 16)}`;
 };
 
 /**
  * Take all terms and synonyms and wrap each in a button
- * 
+ *
  * @param {Object} data Data from the terms API
  */
-const replaceTerms = (data) => {
-	// Create an array of all terms, each with their UID
-	const collections = Object.values(data.items).flatMap(
-		({ term, synonyms, uid }) => [
-			[term, uid],
-			...(synonyms ? synonyms.split(",").map((s) => [s.trim(), uid]) : []),
-		],
-	);
-
+const replaceTerms = (allTermsAndIds) => {
 	// Iterate over all content blocks
 	for (let i = 0; i < contentBlocks.length; i++) {
 		const contentBlock = contentBlocks[i].closest(".section-content");
 
 		if (contentBlock) {
 			// Iterate over all terms
-			for (let j = 0; j < Object.keys(collections).length; j++) {
-				const collection = collections[j];
+			for (let j = 0; j < Object.keys(allTermsAndIds).length; j++) {
+				const termsAndIds = allTermsAndIds[j];
 
 				// The term
-				const term = collection[0];
+				const term = termsAndIds[0];
 				// Regex that finds the term in the content
 				const regexp = new RegExp(`\\b${term}\\b`, "gim");
 				const content = contentBlock.innerHTML.trim();
 				// Replace all occurences of the term with a button
-				contentBlock.innerHTML = content.replaceAll(regexp, (x) => {
-					return `<button class="glossary-term" popovertarget="term-${collection[1].substring(1, 16)}">${term}</button>`;
+				let k = 0;
+				contentBlock.innerHTML = content.replaceAll(regexp, (foundTerm) => {
+					let prefix = `term-${i}-${j}-${k}`;
+					const id = truncateId(termsAndIds[1]);
+					addPopovers(termsAndIds, `${prefix}-${id}`);
+					k++;
+					return `<button class="glossary-term" style="anchor-name: --${prefix}-${id}" popovertarget="${prefix}-${id}">${foundTerm}</button>`;
 				});
 			}
 		}
 	}
+};
+
+/**
+ * Toggle popovers on mouse over
+ */
+const attachMouseEvents = () => {
+	const glossaryTerms = document.querySelectorAll(".glossary-term");
+	let timeoutID;
+
+	glossaryTerms.forEach((trigger) => {
+		const targetId = trigger.getAttribute("popovertarget");
+		const popover = document.getElementById(targetId);
+
+		if (!popover) return;
+
+		// Zeige Popover beim Hover oder Fokus
+		trigger.addEventListener("mouseenter", () => {
+			popover.showPopover();
+		});
+
+		trigger.addEventListener("mouseleave", () => {
+			clearTimeout(timeoutID);
+			timeoutID = setTimeout(function () {
+				popover.hidePopover();
+			}, 1000);
+		});
+
+		popover.addEventListener("mouseenter", () => {
+			clearTimeout(timeoutID);
+		});
+
+		popover.addEventListener("mouseleave", () => {
+			popover.hidePopover();
+		});
+	});
 };

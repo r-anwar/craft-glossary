@@ -14,9 +14,7 @@ class GlossaryFrontend extends AssetBundle
         $this->sourcePath = '@codemonauts/glossary/resources';
 
         $this->js = [
-            /*'js/Glossary.js',*/
-            'js/Glossary-Terms.js',
-            'js/Popover-Hover.js',
+            'js/Glossary-Terms.js'
         ];
 
         $this->css = [
