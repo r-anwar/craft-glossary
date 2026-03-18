@@ -12,8 +12,11 @@ use codemonauts\glossary\fieldlayoutelements\TermField;
 use codemonauts\glossary\services\Terms;
 use codemonauts\glossary\twigextensions\GlossaryFilter;
 use codemonauts\glossary\variables\GlossaryVariable;
+use codemonauts\glossary\variables\CraftVariableBehavior;
+
 use Craft;
 use craft\base\Plugin;
+use craft\events\DefineBehaviorsEvent;
 use craft\events\DefineFieldLayoutFieldsEvent;
 use craft\events\RegisterComponentTypesEvent;
 use craft\events\RegisterUrlRulesEvent;
@@ -96,6 +99,16 @@ class Glossary extends Plugin
         if (Craft::$app->getRequest()->getIsCpRequest()) {
             $this->_cpInit();
         }
+
+        Event::on(
+            CraftVariable::class,
+            CraftVariable::EVENT_DEFINE_BEHAVIORS,
+            function(DefineBehaviorsEvent $e) {
+                $e->sender->attachBehaviors([
+                    CraftVariableBehavior::class,
+                ]);
+            }
+        );
     }
 
     /**

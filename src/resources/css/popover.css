@@ -1,4 +1,4 @@
-.glossary-terms div[popover] {
+.glossary-description[popover] {
     inset:unset;
     position: absolute;
     margin: 0;
@@ -23,7 +23,7 @@
 }
 
 /* Glossarbegriff */
-.glossary, .glossary:is(:hover, :focus-visible) {
+.glossary-term, .glossary-term:is(:hover, :focus-visible) {
     background: unset !important;
     padding: unset !important;
     color: unset !important;

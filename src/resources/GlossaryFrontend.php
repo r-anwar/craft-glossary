@@ -15,7 +15,8 @@ class GlossaryFrontend extends AssetBundle
 
         $this->js = [
             /*'js/Glossary.js',*/
-            'js/Popover-Hover.js'
+            'js/Glossary-Terms.js',
+            'js/Popover-Hover.js',
         ];
 
         $this->css = [
