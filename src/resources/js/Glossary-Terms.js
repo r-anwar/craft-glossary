@@ -77,7 +77,7 @@ const replaceTerms = (allTermsAndIds) => {
 				// The term
 				const term = termsAndIds[0];
 				// Regex that finds the term in the content
-				const regexp = new RegExp(`\\b${term}\\b`, "gim");
+				const regexp = constructRegex(term);
 				const content = contentBlock.innerHTML.trim();
 				// Replace all occurences of the term with a button
 				let k = 0;
@@ -91,6 +91,30 @@ const replaceTerms = (allTermsAndIds) => {
 			}
 		}
 	}
+};
+
+const constructRegex = (term) => {
+  const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const parts = escaped.split('\\-');
+  const inner = parts.join('(?:<\\/[a-z][a-z0-9]*>)?-(?:<[^>]+>)?');
+
+  const fullTagged = `<[^>]+>${inner}(?:<\\/[a-z][a-z0-9]*>)`;
+  const plain      = `(?<!>)${inner}(?:<\\/[a-z][a-z0-9]*>)?`;
+
+  let pattern;
+  if (parts.length > 1) {
+    // Build partialStart at each hyphen boundary
+    const partials = parts.slice(1).map((_, i) => {
+      const before = parts.slice(0, i + 1).join('(?:<\\/[a-z][a-z0-9]*>)?-(?:<[^>]+>)?');
+      const after  = parts.slice(i + 1).join('(?:<\\/[a-z][a-z0-9]*>)?-(?:<[^>]+>)?');
+      return `<[^>]+>${before}(?:<\\/[a-z][a-z0-9]*>)-${after}`;
+    });
+    pattern = `(?:${fullTagged}|${partials.join('|')}|${plain})(?!-)`;
+  } else {
+    pattern = `(?:${fullTagged}|${plain})(?!-)`;
+  }
+
+  return new RegExp(pattern, 'gi');
 };
 
 /**
