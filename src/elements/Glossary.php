@@ -279,7 +279,8 @@ class Glossary extends Element
     public function registerAssets(): void
     {
         $view = Craft::$app->getView();
-
+        // Store the glossary ID in a global so that we can access it in JS
+        $view->registerJs('window.wmGlossaryID='.$this->id, 1);
         $view->registerAssetBundle(GlossaryFrontend::class);
 
         if ($this->css != '') {
