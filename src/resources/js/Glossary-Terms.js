@@ -67,7 +67,7 @@ const truncateId = (str) => {
 const replaceTerms = (allTermsAndIds) => {
 	// Iterate over all content blocks
 	for (let i = 0; i < contentBlocks.length; i++) {
-		const contentBlock = contentBlocks[i].closest(".section-content");
+		const contentBlock = contentBlocks[i].closest(".section-content-partial");
 
 		if (contentBlock) {
 			// Iterate over all terms
