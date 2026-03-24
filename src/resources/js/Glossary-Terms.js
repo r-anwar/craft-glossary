@@ -67,54 +67,92 @@ const truncateId = (str) => {
 const replaceTerms = (allTermsAndIds) => {
 	// Iterate over all content blocks
 	for (let i = 0; i < contentBlocks.length; i++) {
-		const contentBlock = contentBlocks[i].closest(".section-content");
+		const contentBlock = contentBlocks[i].closest(".section-content-partial");
 
 		if (contentBlock) {
 			// Iterate over all terms
+			allTermsAndIds.sort((a, b) => b[0].localeCompare(a[0]));
 			for (let j = 0; j < Object.keys(allTermsAndIds).length; j++) {
 				const termsAndIds = allTermsAndIds[j];
 
 				// The term
 				const term = termsAndIds[0];
 				// Regex that finds the term in the content
-				const regexp = constructRegex(term);
+
 				const content = contentBlock.innerHTML.trim();
 				// Replace all occurences of the term with a button
 				let k = 0;
-				contentBlock.innerHTML = content.replaceAll(regexp, (foundTerm) => {
-					let prefix = `term-${i}-${j}-${k}`;
-					const id = truncateId(termsAndIds[1]);
-					addPopovers(termsAndIds, `${prefix}-${id}`);
-					k++;
-					return `<button class="glossary-term" style="anchor-name: --${prefix}-${id}" popovertarget="${prefix}-${id}">${foundTerm}</button>`;
-				});
+
+				contentBlock.innerHTML = wrapMatches(content, termsAndIds, i, j, k);
 			}
 		}
 	}
 };
 
 const constructRegex = (term) => {
-  const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-  const parts = escaped.split('\\-');
-  const inner = parts.join('(?:<\\/[a-z][a-z0-9]*>)?-(?:<[^>]+>)?');
+	const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+	const parts = escaped.split("\\-");
 
-  const fullTagged = `<[^>]+>${inner}(?:<\\/[a-z][a-z0-9]*>)`;
-  const plain      = `(?<!>)${inner}(?:<\\/[a-z][a-z0-9]*>)?`;
+	const spanJoin = "(?:<\\/span>)?-(?:<span[^>]*>)?";
+	const inner = parts.join(spanJoin);
+	const withLeadingSpan = `(?:<span[^>]*>)?${inner}(?:<\\/span>)?`;
 
-  let pattern;
-  if (parts.length > 1) {
-    // Build partialStart at each hyphen boundary
-    const partials = parts.slice(1).map((_, i) => {
-      const before = parts.slice(0, i + 1).join('(?:<\\/[a-z][a-z0-9]*>)?-(?:<[^>]+>)?');
-      const after  = parts.slice(i + 1).join('(?:<\\/[a-z][a-z0-9]*>)?-(?:<[^>]+>)?');
-      return `<[^>]+>${before}(?:<\\/[a-z][a-z0-9]*>)-${after}`;
-    });
-    pattern = `(?:${fullTagged}|${partials.join('|')}|${plain})(?!-)`;
-  } else {
-    pattern = `(?:${fullTagged}|${plain})(?!-)`;
-  }
+	return new RegExp(withLeadingSpan, "gi");
+};
 
-  return new RegExp(pattern, 'gi');
+const wrapMatches = (html, termsAndIds, i, j, k) => {
+	const term = termsAndIds[0];
+	const id = termsAndIds[1];
+	const regex = constructRegex(term);
+	const result = [];
+	let lastIndex = 0;
+	let match;
+
+	while ((match = regex.exec(html)) !== null) {
+		const index = match.index;
+		const before = html.slice(0, index);
+
+		// 1. Reject if inside an HTML attribute
+		const lastTagOpen = before.lastIndexOf("<");
+		const lastTagClose = before.lastIndexOf(">");
+		if (lastTagOpen > lastTagClose) {
+			const insideTag = before.slice(lastTagOpen);
+			const quoteMatches = insideTag.match(/"/g);
+			if (quoteMatches && quoteMatches.length % 2 !== 0) continue;
+			if (!quoteMatches) continue;
+		}
+
+		// 2. Reject if inside a <button>
+		const tagPattern = /<\/?[a-z][a-z0-9]*(?:\s[^>]*)?\s*>/gi;
+		const allTagsBefore = [...before.matchAll(tagPattern)];
+		const stack = [];
+		for (const t of allTagsBefore) {
+			const tag = t[0];
+			const isClosing = tag.startsWith("</");
+			const tagName = tag.match(/<\/?([a-z][a-z0-9]*)/i)?.[1]?.toLowerCase();
+			if (!isClosing) stack.push(tagName);
+			else {
+				const last = stack.lastIndexOf(tagName);
+				if (last !== -1) stack.splice(last, 1);
+			}
+		}
+		if (stack.includes("button")) continue;
+
+		let prefix = `term-${i}-${j}-${k}-${index}`;
+		const id = truncateId(termsAndIds[1]);
+		addPopovers(termsAndIds, `${prefix}-${id}`);
+
+		// Wrap the match in a button
+		result.push(html.slice(lastIndex, index));
+		result.push(
+			`<button class="glossary-term" style="anchor-name: --${prefix}-${id}" popovertarget="${prefix}-${id}">${match[0]}</button>`,
+		);
+		lastIndex = index + match[0].length;
+		k++;
+	}
+
+	result.push(html.slice(lastIndex));
+	return result.join("");
 };
 
 /**

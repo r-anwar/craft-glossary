@@ -36,6 +36,11 @@
     display: inline-block;
 }
 
+:is(h1, h2, h3, h4, h5, h6) .glossary-term,
+:is(h1, h2, h3, h4, h5, h6) .glossary-term:is(:hover, :focus-visible) {
+    font-size: inherit !important;
+}
+
 @supports not selector(:popover-open) {
     [popover] {
         display: none !important;
