@@ -16,6 +16,21 @@ use function Symfony\Component\String\s;
 
 class Terms extends Component
 {
+    /**
+     * Zeichen, die als Wortbestandteil gelten. Der Bindestrich ist bewusst enthalten:
+     * "Au-Pair" wird damit nicht innerhalb von "Au-Pair-Kraft" ausgezeichnet.
+     * `\b` leistet das nicht, weil "-" selbst ein Nicht-Wort-Zeichen ist und
+     * daher hinter "Pair" eine Wortgrenze bildet.
+     */
+    private const WORD_CHARS = '\p{L}\p{N}_-';
+
+    /**
+     * Elemente, in deren Inhalt nicht ausgezeichnet wird. <a> und <button> sind
+     * interaktiv — ein Glossar-Button darin waere verschachtelter interaktiver
+     * Inhalt und damit ungueltiges HTML. <script>/<style> sind kein Fliesstext.
+     */
+    private const SKIPPED_ELEMENTS = 'a|button|script|style';
+
     protected string $renderedTerms = '';
 
     protected array $usedTerms = [];
@@ -25,16 +40,16 @@ class Terms extends Component
      *
      * @param Term $term
      *
-     * @return array
+     * @return string[]
      */
     public function parseTerms(Term $term): array
     {
         $terms = [
-            $term->term,
+            trim((string)$term->term),
         ];
 
         if (!empty($term->synonyms)) {
-            $synonyms = explode(',', $term->synonyms);
+            $synonyms = array_map('trim', explode(',', $term->synonyms));
             $terms = array_merge($terms, $synonyms);
         }
 
@@ -51,206 +66,49 @@ class Terms extends Component
      */
     public function renderTerms(string $text, Glossary $glossary): string
     {
-        $view = Craft::$app->getView();
         $originalText = $text;
 
         try {
             $termTemplate = !empty($glossary->termTemplate) ? $glossary->termTemplate : '<span>{{ text }}</span>';
-            $replacements = [];
-            $terms = Term::find()->glossary($glossary)->all();
+            $tooltipTwig = $this->createTooltipRenderer($glossary);
 
-            foreach ($terms as $term) {
-                $template = Html::modifyTagAttributes($termTemplate, [
+            $replacements = [];
+            $templates = [];
+            $indexes = [];
+
+            foreach ($this->collectCandidates($glossary) as [$word, $term]) {
+                $templates[$term->id] ??= Html::modifyTagAttributes($termTemplate, [
                     'class' => 'glossary',
                     'data-glossary-term' => 'term-' . $term->id,
                 ]);
+                $indexes[$term->id] ??= 0;
 
-                $index = 0;
-                $words = $this->parseTerms($term);
+                $template = $templates[$term->id];
+                $pattern = $this->buildPattern($word, (bool)$term->matchSubstring, (bool)$term->caseSensitive);
 
-                foreach ($words as $word) {
-                    $word = preg_quote($word, '/');
-                    if ($term->matchSubstring) {
-                        $pattern = '/' . $word . '/';
-                    } else {
-                        $pattern = "/\b" . $word . "\b/";
+                $text = $this->replaceInTextNodes($text, $pattern, function (array $matches) use ($term, $template, $tooltipTwig, &$replacements, &$indexes): string {
+                    $index = $indexes[$term->id];
+                    $token = $term->uid . '-' . $index;
+
+                    /**
+                     * @deprecated Remove field values with version 2.0 and only use term to access all fields.
+                     */
+                    $variables = $term->getFieldValues();
+                    $variables['term'] = $term;
+                    $variables['text'] = $matches[0];
+                    $variables['token'] = $term->id . $index;
+
+                    $replacements[$token] = $this->renderTermTag($template, $variables);
+
+                    $tooltip = $this->renderTooltip($tooltipTwig, $variables);
+                    if ($tooltip !== null) {
+                        $this->usedTerms[$token] = $tooltip;
                     }
-                    if (!$term->caseSensitive) {
-                        $pattern .= 'i';
-                    }
-                    $text = s($text)->replaceMatches($pattern, function ($matches) use ($term, $template, &$replacements, &$index, $view, $glossary) {
-                        try {
-                            /**
-                             * @warning
-                             * $view->renderString(...) internally triggers the instantiation of Twig\Node\Node,
-                             * which is deprecated since Twig 3.15 and will become abstract in Twig 4.0.
-                             *
-                             * This results in a runtime warning or exception in environments that enforce deprecation policies,
-                             * particularly when Symfony's String component is used with deprecation handling enabled.
-                             *
-                             * Exception thrown:
-                             * Symfony\Component\String\Exception\InvalidArgumentException:
-                             * "Since twig/twig 3.15: Instantiating 'Twig\Node\Node' directly is deprecated; the class will become abstract in 4.0"
-                             *
-                             * Workaround:
-                             * Perform a whitespace-insensitive placeholder substitution for all variables inside the template string.
-                             * Supports {{ text }}, {{ term }}, and {{ term.fieldName }} syntax manually, without relying on Twig rendering.*
-                             *
-                             * This avoids triggering deprecated internal behavior and ensures future compatibility with Twig 4.
-                             *
-                             * @see https://github.com/twigphp/Twig/releases/tag/v3.15.0
-                             * @see https://github.com/codemonauts/craft-glossary/issues/13
-                             * @see https://github.com/codemonauts/craft-glossary/issues/13
-                             */
-                            /*
-                            $replacement = trim($view->renderString($template, [
-                                'term' => $term,
-                                'text' => $matches[0],
-                            ], 'site'));
-                            */
 
-                            $variables = $term->getFieldValues();
-                            $variables['term'] = $term;
-                            $variables['text'] = $matches[0];
+                    $indexes[$term->id]++;
 
-                            $replacement = preg_replace_callback('/\{\{\s*(.*?)\s*\}\}/',
-                                function ($match) use ($variables, $term, &$index) {
-                                    $key = trim($match[1]);
-
-                                    // Einfacher Platzhalter: {{ text }}
-                                    if ($key === 'text') {
-                                        return htmlspecialchars($variables['text'] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                                    }
-
-                                    // Einfacher Platzhalter: {{ term }}
-                                    if ($key === 'term') {
-                                        return htmlspecialchars((string)$term, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                                    }
-                                    // Einfacher Platzhalter: {{ term }}
-                                    if ($key === 'token') {
-                                        return $term->id.$index;
-                                    }
-
-                                    // Verschachtelte Platzhalter: {{ term.id }}, {{ term.bio }}, ...
-                                    $parts = explode('.', $key);
-                                    if ($parts[0] === 'term') {
-                                        $value = $term;
-                                        for ($i = 1; $i < count($parts); $i++) {
-                                            $part = $parts[$i];
-                                            if (is_array($value) && array_key_exists($part, $value)) {
-                                                $value = $value[$part];
-                                            } elseif (is_object($value) && isset($value->$part)) {
-                                                $value = $value->$part;
-                                            } else {
-                                                return $match[0]; // nicht ersetzbar → unverändert zurückgeben
-                                            }
-                                        }
-
-                                        return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                                    }
-
-                                    // Fallback: Unverändert zurückgeben
-                                    return $match[0];
-                                },
-                                $template);
-
-                            /*
-                            $variables = $term->getFieldValues();
-                            $variables['term'] = $term;
-                            $variables['text'] = $matches[0];
-
-                            $replacement = preg_replace_callback('/\{\{\s*(.*?)\s*\}\}/',
-                                function ($match) use ($variables, $term) {
-                                    $key = $match[1];
-
-                                    if ($key === 'text') {
-                                        return htmlspecialchars($variables['text'] ?? '',
-                                            ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                                    }
-
-                                    if ($key === 'term') {
-                                        return htmlspecialchars((string)$term, ENT_QUOTES | ENT_SUBSTITUTE,
-                                            'UTF-8');
-                                    }
-
-                                    if (str_starts_with($key, 'term.')) {
-                                        $field = substr($key, 5);
-                                        if (array_key_exists($field, $variables)) {
-                                            return htmlspecialchars((string)$variables[$field],
-                                                ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                                        }
-                                    }
-
-                                    // Fallback: Unverändert zurückgeben
-                                    return $match[0];
-                                }, $template);*/
-                        } catch (SyntaxError $e) {
-                            Craft::error($e->getMessage(), 'glossary');
-                            $replacement = false;
-                        }
-
-                        if ($replacement === false) {
-                            return $term;
-                        }
-                                    
-                        /**
-                         * @deprecated Remove field values with version 2.0 and only use term to access all fields.
-                        */
-                        $variables = $term->getFieldValues();
-                        $variables['term'] = $term;
-                        $variables['text'] = $matches[0];
-                        $variables['token'] = $term->id.$index;
-                        
-                        $token = $term->uid . '-' . $index++;
-                        $replacements[$token] = $replacement;
-
-                        try {
-                            /**
-                             * @warning
-                             * $view->renderTemplate(...) internally triggers the instantiation of Twig\Node\Node,
-                             * which is deprecated since Twig 3.15 and will become abstract in Twig 4.0.
-                             *
-                             * This results in a runtime warning or exception in environments that enforce deprecation policies,
-                             * particularly when Symfony's String component is used with deprecation handling enabled.
-                             *
-                             * Exception thrown:
-                             * Symfony\Component\String\Exception\InvalidArgumentException:
-                             * "Since twig/twig 3.15: Instantiating 'Twig\Node\Node' directly is deprecated; the class will become abstract in 4.0"
-                             *
-                             * Workaround:
-                             * Instead of using Craft's native view rendering (which relies on Craft's Twig environment with custom node visitors),
-                             * we manually:
-                             *  1. Load the template file as a string via file_get_contents()
-                             *  2. Register it into a Twig\ArrayLoader under a key (e.g. 'tooltip')
-                             *  3. Instantiate a clean Twig\Environment with no Craft-specific visitors
-                             *  4. Render the template manually using $twig->render('tooltip', [...])
-                             *
-                             * This avoids triggering deprecated internal behavior and ensures future compatibility with Twig 4.
-                             *
-                             * @see https://github.com/twigphp/Twig/releases/tag/v3.15.0
-                             * @see https://github.com/codemonauts/craft-glossary/issues/13
-                             * @see https://github.com/codemonauts/craft-glossary/issues/13
-                             */
-                            //$this->usedTerms[$term->id] = $view->renderTemplate($glossary->tooltipTemplate, $variables, 'site');
-
-                            $templateString = file_get_contents(Craft::getAlias('@templates/' . $glossary->tooltipTemplate . '.twig'));
-
-                            $loader = new ArrayLoader(['tooltip' => $templateString]);
-                            $twig = new TwigEnvironment($loader, [
-                                'cache' => false,
-                                'autoescape' => 'html',
-                            ]);
-
-                            $rendered = $twig->render('tooltip', $variables);
-
-                            $this->usedTerms[$token] = $rendered;
-                        } catch (SyntaxError $e) {
-                            Craft::error($e->getMessage(), 'glossary');
-                        }
-
-                        return '{{%' . $token . '%}}';
-                    });
-                }
+                    return '{{%' . $token . '%}}';
+                });
             }
 
             foreach ($replacements as $token => $replacement) {
@@ -258,7 +116,7 @@ class Terms extends Component
             }
 
             $renderedTerms = '';
-            foreach ($this->usedTerms as $id => $usedTerm) {
+            foreach ($this->usedTerms as $usedTerm) {
                 $renderedTerms .= Html::tag('div', $usedTerm, [
                     'class' => 'glossary-popover-container',
                 ]);
@@ -266,9 +124,7 @@ class Terms extends Component
 
             $this->renderedTerms = Html::tag('div', $renderedTerms, [
                 'id' => 'glossary-terms',
-                /*'style' => 'display: none;',*/
             ]);
-
         } catch (Exception $e) {
             Craft::error('Error when rendering glossary terms: ' . $e->getMessage(), 'glossary');
             $text = $originalText;
@@ -285,5 +141,227 @@ class Terms extends Component
     public function getRenderedTerms(): string
     {
         return $this->renderedTerms;
+    }
+
+    /**
+     * Returns all [word, term] pairs of a glossary, longest word first.
+     *
+     * Ohne die Sortierung entscheidet die Anlagereihenfolge der Terms, welcher von
+     * zwei ueberlappenden Begriffen zuerst greift — "Au-Pair" wuerde dann
+     * "Au-Pair-Kraft" zerschneiden, sobald es aelter ist.
+     *
+     * @param Glossary $glossary
+     *
+     * @return array<array{0: string, 1: Term}>
+     */
+    private function collectCandidates(Glossary $glossary): array
+    {
+        $candidates = [];
+
+        foreach ($this->findTerms($glossary) as $term) {
+            foreach ($this->parseTerms($term) as $word) {
+                $candidates[] = [$word, $term];
+            }
+        }
+
+        usort($candidates, static fn(array $a, array $b): int => mb_strlen($b[0]) <=> mb_strlen($a[0]));
+
+        return $candidates;
+    }
+
+    /**
+     * Returns the terms of a glossary. Separate Methode, damit sie in Tests
+     * ueberschrieben werden kann.
+     *
+     * @param Glossary $glossary
+     *
+     * @return Term[]
+     */
+    protected function findTerms(Glossary $glossary): array
+    {
+        return Term::find()->glossary($glossary)->all();
+    }
+
+    /**
+     * Builds the search pattern for a single word of a term.
+     *
+     * @param string $word
+     * @param bool $matchSubstring
+     * @param bool $caseSensitive
+     *
+     * @return string
+     */
+    private function buildPattern(string $word, bool $matchSubstring, bool $caseSensitive): string
+    {
+        $quoted = preg_quote($word, '/');
+
+        if ($matchSubstring) {
+            $pattern = '/' . $quoted . '/';
+        } else {
+            $pattern = '/(?<![' . self::WORD_CHARS . '])' . $quoted . '(?![' . self::WORD_CHARS . '])/';
+        }
+
+        if (!$caseSensitive) {
+            $pattern .= 'i';
+        }
+
+        // s()->replaceMatches() haengt intern nochmals ein "u" an — doppelte Modifier
+        // sind in PCRE unkritisch. Explizit gesetzt, damit das Pattern auch ohne
+        // Symfony\String korrekt arbeitet.
+        return $pattern . 'u';
+    }
+
+    /**
+     * Applies a pattern to the text nodes of an HTML string, leaving tags untouched.
+     *
+     * Ohne diese Trennung greift das Pattern auch in Attributwerte: ein Begriff
+     * "Grundbuch" trifft in <a href="/amtswege/grundbuch" title="Grundbuch-Auszug">
+     * dreimal statt einmal und zerstoert beim Ersetzen das Markup.
+     *
+     * @param string $html
+     * @param string $pattern
+     * @param callable $callback
+     *
+     * @return string
+     */
+    private function replaceInTextNodes(string $html, string $pattern, callable $callback): string
+    {
+        // Bei PREG_SPLIT_DELIM_CAPTURE stehen die Tags auf den ungeraden Indizes.
+        $segments = preg_split('/(<[^>]*>)/u', $html, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+        if ($segments === false) {
+            Craft::warning('Could not split text into nodes, skipping replacement.', 'glossary');
+
+            return $html;
+        }
+
+        $skipDepth = 0;
+
+        foreach ($segments as $i => $segment) {
+            if ($i % 2 === 1) {
+                if (preg_match('/^<\s*(\/?)\s*(?:' . self::SKIPPED_ELEMENTS . ')\b/i', $segment, $match) === 1) {
+                    $skipDepth = $match[1] === '/' ? max(0, $skipDepth - 1) : $skipDepth + 1;
+                }
+
+                continue;
+            }
+
+            if ($segment === '' || $skipDepth > 0) {
+                continue;
+            }
+
+            $segments[$i] = (string)s($segment)->replaceMatches($pattern, $callback);
+        }
+
+        return implode('', $segments);
+    }
+
+    /**
+     * Renders the term template for a single occurrence.
+     *
+     * @warning Kein $view->renderString(): das instanziiert intern Twig\Node\Node,
+     * was seit twig/twig 3.15 deprecated ist und in 4.0 abstrakt wird. Stattdessen
+     * werden {{ ... }}-Platzhalter direkt ersetzt.
+     * @see https://github.com/twigphp/Twig/releases/tag/v3.15.0
+     * @see https://github.com/codemonauts/craft-glossary/issues/13
+     *
+     * @param string $template
+     * @param array $variables
+     *
+     * @return string
+     */
+    private function renderTermTag(string $template, array $variables): string
+    {
+        $rendered = preg_replace_callback('/\{\{\s*(.*?)\s*\}\}/', static function (array $match) use ($variables): string {
+            $key = trim($match[1]);
+
+            if ($key === 'text') {
+                return htmlspecialchars((string)($variables['text'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            }
+
+            if ($key === 'term') {
+                return htmlspecialchars((string)$variables['term'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            }
+
+            if ($key === 'token') {
+                return (string)$variables['token'];
+            }
+
+            $parts = explode('.', $key);
+            if ($parts[0] !== 'term') {
+                return $match[0];
+            }
+
+            $value = $variables['term'];
+            for ($i = 1, $count = count($parts); $i < $count; $i++) {
+                $part = $parts[$i];
+                if (is_array($value) && array_key_exists($part, $value)) {
+                    $value = $value[$part];
+                } elseif (is_object($value) && isset($value->$part)) {
+                    $value = $value->$part;
+                } else {
+                    return $match[0];
+                }
+            }
+
+            return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        }, $template);
+
+        return $rendered ?? $template;
+    }
+
+    /**
+     * Creates the Twig environment for the tooltip template, once per render pass.
+     *
+     * @warning Kein $view->renderTemplate(): siehe renderTermTag(). Das Template wird
+     * als String geladen und in einer Twig-Umgebung ohne Craft-NodeVisitors gerendert.
+     *
+     * @param Glossary $glossary
+     *
+     * @return TwigEnvironment|null
+     */
+    private function createTooltipRenderer(Glossary $glossary): ?TwigEnvironment
+    {
+        $path = Craft::getAlias('@templates/' . $glossary->tooltipTemplate . '.twig');
+
+        if (!is_string($path) || !is_file($path)) {
+            Craft::error("Tooltip template not found: {$glossary->tooltipTemplate}", 'glossary');
+
+            return null;
+        }
+
+        $templateString = file_get_contents($path);
+
+        if ($templateString === false) {
+            Craft::error("Could not read tooltip template: {$path}", 'glossary');
+
+            return null;
+        }
+
+        return new TwigEnvironment(new ArrayLoader(['tooltip' => $templateString]), [
+            'cache' => false,
+            'autoescape' => 'html',
+        ]);
+    }
+
+    /**
+     * @param TwigEnvironment|null $twig
+     * @param array $variables
+     *
+     * @return string|null
+     */
+    private function renderTooltip(?TwigEnvironment $twig, array $variables): ?string
+    {
+        if ($twig === null) {
+            return null;
+        }
+
+        try {
+            return $twig->render('tooltip', $variables);
+        } catch (SyntaxError $e) {
+            Craft::error($e->getMessage(), 'glossary');
+
+            return null;
+        }
     }
 }
