@@ -32,9 +32,10 @@
     font-weight: unset !important;
     text-decoration: underline dotted !important;
     text-transform: unset !important;
-    display: inline-block !important;
+    /* inline, nicht inline-block: der Begriff muss innerhalb umbrechen koennen,
+       sonst springt er am Zeilenende komplett in die naechste Zeile. */
+    display: inline !important;
     cursor: help;
-    display: inline-block;
 }
 
 @supports not selector(:popover-open) {
