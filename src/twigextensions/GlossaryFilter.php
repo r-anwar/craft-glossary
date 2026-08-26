@@ -57,7 +57,12 @@ class GlossaryFilter extends AbstractExtension
         //return $terms->renderTerms($value, $glossary);
 
         $result = $terms->renderTerms($value, $glossary);
-        Craft::$app->view->registerHtml($terms->getRenderedTerms(), View::POS_END);
+        // Fester Key: Der Filter laeuft einmal pro Textelement und registriert jedes Mal
+        // den vollstaendigen, mitgewachsenen Container. Ohne Key legt Craft ihn unter
+        // md5($html) ab — jede Fassung bekaeme einen eigenen Eintrag, und die Seite
+        // enthielte den Container mehrfach mit doppelten Popover-IDs. Mit festem Key
+        // ueberschreibt die jeweils letzte, vollstaendigste Fassung die vorherige.
+        Craft::$app->view->registerHtml($terms->getRenderedTerms(), View::POS_END, 'glossary-terms');
 
         return $result;
 

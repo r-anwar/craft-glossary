@@ -36,6 +36,15 @@ class Terms extends Component
     protected array $usedTerms = [];
 
     /**
+     * Laufende Nummer je Term, ueber ALLE Aufrufe von renderTerms() eines Requests.
+     * Der Filter laeuft einmal pro Textelement; waere der Zaehler lokal, begaennen die
+     * Nummern in jeder Passage wieder bei 0 und die erzeugten DOM-IDs kollidierten.
+     *
+     * @var array<int, int>
+     */
+    protected array $indexes = [];
+
+    /**
      * Returns all terms to search for.
      *
      * @param Term $term
@@ -74,20 +83,19 @@ class Terms extends Component
 
             $replacements = [];
             $templates = [];
-            $indexes = [];
 
             foreach ($this->collectCandidates($glossary) as [$word, $term]) {
                 $templates[$term->id] ??= Html::modifyTagAttributes($termTemplate, [
                     'class' => 'glossary',
                     'data-glossary-term' => 'term-' . $term->id,
                 ]);
-                $indexes[$term->id] ??= 0;
+                $this->indexes[$term->id] ??= 0;
 
                 $template = $templates[$term->id];
                 $pattern = $this->buildPattern($word, (bool)$term->matchSubstring, (bool)$term->caseSensitive);
 
-                $text = $this->replaceInTextNodes($text, $pattern, function (array $matches) use ($term, $template, $tooltipTwig, &$replacements, &$indexes): string {
-                    $index = $indexes[$term->id];
+                $text = $this->replaceInTextNodes($text, $pattern, function (array $matches) use ($term, $template, $tooltipTwig, &$replacements): string {
+                    $index = $this->indexes[$term->id];
                     $token = $term->uid . '-' . $index;
 
                     /**
@@ -96,7 +104,9 @@ class Terms extends Component
                     $variables = $term->getFieldValues();
                     $variables['term'] = $term;
                     $variables['text'] = $matches[0];
-                    $variables['token'] = $term->id . $index;
+                    // Trenner ist noetig: ohne ihn waeren Term 52 mit Index 3 und
+                    // Term 5 mit Index 23 beide "523".
+                    $variables['token'] = $term->id . '-' . $index;
 
                     $replacements[$token] = $this->renderTermTag($template, $variables);
 
@@ -105,7 +115,7 @@ class Terms extends Component
                         $this->usedTerms[$token] = $tooltip;
                     }
 
-                    $indexes[$term->id]++;
+                    $this->indexes[$term->id]++;
 
                     return '{{%' . $token . '%}}';
                 });
@@ -140,6 +150,11 @@ class Terms extends Component
      */
     public function getRenderedTerms(): string
     {
+        // Ohne Treffer keinen leeren Container ausliefern.
+        if ($this->usedTerms === []) {
+            return '';
+        }
+
         return $this->renderedTerms;
     }
 
