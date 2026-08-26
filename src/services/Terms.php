@@ -45,6 +45,17 @@ class Terms extends Component
     protected array $indexes = [];
 
     /**
+     * Kandidaten je Glossar, fuer die Dauer des Requests gemerkt. renderTerms()
+     * laeuft einmal pro Textelement — auf einer Seite sind das zehn bis zwanzig
+     * Aufrufe, die sonst jedes Mal dieselbe Term-Query absetzen und dieselbe
+     * Liste neu sortieren. Bewusst kein persistenter Cache: das Ergebnis darf
+     * einen Request nicht ueberleben, sonst braeuchte es eine Invalidierung.
+     *
+     * @var array<int, array<array{0: string, 1: Term}>>
+     */
+    private array $candidatesByGlossary = [];
+
+    /**
      * Returns all terms to search for.
      *
      * @param Term $term
@@ -171,6 +182,10 @@ class Terms extends Component
      */
     private function collectCandidates(Glossary $glossary): array
     {
+        if (isset($this->candidatesByGlossary[$glossary->id])) {
+            return $this->candidatesByGlossary[$glossary->id];
+        }
+
         $candidates = [];
 
         foreach ($this->findTerms($glossary) as $term) {
@@ -181,7 +196,7 @@ class Terms extends Component
 
         usort($candidates, static fn(array $a, array $b): int => mb_strlen($b[0]) <=> mb_strlen($a[0]));
 
-        return $candidates;
+        return $this->candidatesByGlossary[$glossary->id] = $candidates;
     }
 
     /**
