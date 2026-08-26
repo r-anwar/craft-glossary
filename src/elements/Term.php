@@ -18,6 +18,19 @@ use yii\base\Exception;
 class Term extends Element
 {
     /**
+     * Eigene Attribute, die in `glossary_terms` liegen und deren Aenderung sich
+     * auf die Ausgabe auswirkt. `enabled` fehlt bewusst: Statuswechsel erkennt
+     * Craft von sich aus.
+     */
+    private const TRACKED_ATTRIBUTES = [
+        'term',
+        'synonyms',
+        'glossaryId',
+        'caseSensitive',
+        'matchSubstring',
+    ];
+
+    /**
      * @var string The term to match.
      */
     public string $term = '';
@@ -239,17 +252,102 @@ class Term extends Element
      */
     public function getFieldLayout(): ?FieldLayout
     {
-        if ($this->glossaryId) {
-            $glossary = Glossary::findOne(['id' => $this->glossaryId]);
-        } else {
-            $glossary = Glossary::findOne(['default' => true]);
-        }
+        // Ueber den Service statt per findOne(): renderTerms() ruft je Treffer
+        // getFieldValues() auf, und das laeuft hier durch. Der Service merkt
+        // sich das Glossar fuer die Dauer des Requests, direkte Queries wuerden
+        // pro Treffer und Textelement erneut abfragen.
+        $glossaries = GlossaryPlugin::getInstance()->getGlossaries();
+
+        $glossary = $this->glossaryId
+            ? $glossaries->getGlossaryById($this->glossaryId)
+            : $glossaries->getDefaultGlossary();
 
         if (!$glossary) {
             $glossary = Glossary::findOne();
         }
 
         return $glossary?->getFieldLayout();
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function beforeSave(bool $isNew): bool
+    {
+        $this->markChangedAttributesAsDirty($isNew);
+
+        return parent::beforeSave($isNew);
+    }
+
+    /**
+     * Meldet Craft, welche Attribute sich tatsaechlich geaendert haben.
+     *
+     * Craft fuellt `_dirtyAttributes` ausschliesslich ueber `setDirtyAttributes()`.
+     * Der Element-Editor setzt die Attribute jedoch per `setAttributes()`, also
+     * ohne jede Markierung — `getDirtyAttributes()` liefert dadurch immer ein
+     * leeres Array. Cache-Plugins wie Blitz halten deshalb jedes Speichern fuer
+     * eine Nulländerung und invalidieren die Seiten nicht, auf denen der Term
+     * ausgezeichnet ist. Custom Fields sind nicht betroffen, die laufen ueber
+     * `setFieldValue()` und markieren sich selbst.
+     *
+     * Der Vergleich gehoert in beforeSave(): danach schreibt afterSave() den
+     * Record, und `markAsClean()` raeumt erst nach EVENT_AFTER_SAVE_ELEMENT auf.
+     *
+     * @param bool $isNew
+     *
+     * @return void
+     */
+    private function markChangedAttributesAsDirty(bool $isNew): void
+    {
+        if ($isNew) {
+            $this->setDirtyAttributes(self::TRACKED_ATTRIBUTES);
+
+            return;
+        }
+
+        $record = TermRecord::findOne($this->id);
+
+        if ($record === null) {
+            // Kein Vergleichsstand vorhanden: lieber zu viel melden als zu wenig.
+            $this->setDirtyAttributes(self::TRACKED_ATTRIBUTES);
+
+            return;
+        }
+
+        $changed = [];
+
+        foreach (self::TRACKED_ATTRIBUTES as $attribute) {
+            if (self::normalize($attribute, $record->$attribute) !== self::normalize($attribute, $this->$attribute)) {
+                $changed[] = $attribute;
+            }
+        }
+
+        if ($changed !== []) {
+            $this->setDirtyAttributes($changed);
+        }
+    }
+
+    /**
+     * Bringt Element- und Record-Wert auf denselben Typ.
+     *
+     * Ohne das vergleicht man Datenbank-Rueckgaben gegen typisierte Properties:
+     * je nach Treiber kommt aus einer Boolean-Spalte `true`, `1` oder `'t'`
+     * zurueck, aus einer Integer-Spalte auch mal ein String.
+     *
+     * @param string $attribute
+     * @param mixed $value
+     *
+     * @return bool|int|string
+     */
+    private static function normalize(string $attribute, mixed $value): bool|int|string
+    {
+        return match ($attribute) {
+            'caseSensitive', 'matchSubstring' => is_string($value)
+                ? !in_array($value, ['', '0', 'f', 'false'], true)
+                : (bool)$value,
+            'glossaryId' => (int)$value,
+            default => (string)$value,
+        };
     }
 
     /**
